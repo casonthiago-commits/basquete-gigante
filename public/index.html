@@ -117,7 +117,7 @@ socket.on('atualizar',(d)=>{
   d.jogadores.forEach(j=>{
     const div=document.createElement('div'); div.className='jogador'+(j.andando?' andando':'');
     div.style.left=(j.x/800*100)+'%'; div.style.top=(j.y/560*100)+'%';
-   ${j.personagem||'🐸'}</span><span class="nome">${j.nome||'Jogador'}
+d.innerHTML=`<span class="emoji">${j.personagem||'🐸'}</span><span class="nome">${j.nome||'Jogador'}</span><span class="placar-mini">${j.pontos||0}</span>`;
     q.appendChild(div);
   });
   const bola=document.getElementById('bola');
