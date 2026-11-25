@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Basquete Gigante 🏀</title>
+<script src="/socket.io/socket.io.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{font-family:Arial,sans-serif;background:#1a1a2e;color:#fff;overflow:hidden;height:100dvh}
+#tela-inicial{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:20px;background:linear-gradient(180deg,#ff8c00,#1a1a2e);z-index:10;text-align:center}
+#tela-inicial h1{font-size:42px}
+#tela-inicial p{opacity:.9}
+input,select{width:100%;max-width:320px;padding:14px;border-radius:12px;border:none;font-size:16px;text-align:center}
+button{width:100%;max-width:320px;padding:15px;border:none;border-radius:12px;font-size:18px;font-weight:bold;cursor:pointer}
+.btn-laranja{background:#ff8c00;color:#fff}
+.btn-verde{background:#22c55e;color:#fff}
+.btn-cinza{background:#444;color:#fff}
+.personagens{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;max-width:340px}
+.personagens button{width:52px;height:52px;font-size:28px;background:#fff;border-radius:12px;padding:0}
+.personagens button.sel{outline:4px solid #ff8c00}
+.times{display:flex;gap:10px;width:100%;max-width:320px}
+.times button{flex:1}
+.times button.sel{outline:4px solid #fff}
+#codigo-sala{font-size:28px;font-weight:bold;background:#00000055;padding:8px 16px;border-radius:10px;letter-spacing:4px}
+#jogo{display:none;height:100dvh;flex-direction:column}
+#topo{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:#00000066;font-weight:bold}
+#quadra{flex:1;position:relative;background:#d19a4a;overflow:hidden;touch-action:none}
+#quadra::before{content:'';position:absolute;left:50%;top:0;bottom:0;width:3px;background:#fff;transform:translateX(-50%)}
+#quadra::after{content:'';position:absolute;left:50%;top:50%;width:140px;height:140px;border:3px solid #fff;border-radius:50%;transform:translate(-50%,-50%)}
+.cesta{position:absolute;top:50%;width:14px;height:90px;background:#ff8c00;border:3px solid #fff;transform:translateY(-50%);z-index:2}
+.cesta.esq{left:0;border-left:none}
+.cesta.dir{right:0;border-right:none}
+.jogador{position:absolute;width:64px;height:64px;transform:translate(-50%,-50%);text-align:center;z-index:3;transition:transform .05s}
+.jogador .emoji{font-size:44px;line-height:1;display:block;filter:drop-shadow(0 3px 2px #000)}
+.jogador .nome{font-size:11px;background:#000a;padding:2px 6px;border-radius:8px;white-space:nowrap}
+.jogador.andando .emoji{animation:pula .3s infinite alternate}
+@keyframes pula{from{transform:translateY(0)}to{transform:translateY(-6px)}}
+#bola{position:absolute;width:44px;height:44px;font-size:36px;transform:translate(-50%,-50%);z-index:4}
+#joystick{position:absolute;left:18px;bottom:18px;width:110px;height:110px;background:#ffffff33;border:2px solid #fff;border-radius:50%;z-index:20}
+#bolinha{position:absolute;left:50%;top:50%;width:46px;height:46px;background:#fff;border-radius:50%;transform:translate(-50%,-50%)}
+#aviso{position:absolute;left:50%;top:40%;transform:translate(-50%,-50%);font-size:32px;font-weight:bold;text-shadow:0 2px 10px #000;z-index:30;text-align:center;display:none}
+#btn-recomecar{position:absolute;right:14px;bottom:14px;padding:12px 18px;width:auto;background:#22c55e;color:#fff;border-radius:12px;z-index:20}
+</style>
+</head>
+<body>
+
+<div id="tela-inicial">
+<h1>🏀 BASQUETE GIGANTE</h1>
+<p>Empurre a bola até a cesta adversária! 2 pontos por cesta. 2 minutos!</p>
+<input id="nome" placeholder="Seu nome" maxlength="12">
+<div class="personagens" id="lista-personagens"></div>
+<div class="times">
+<button id="btn-azul" class="sel" style="background:#2563eb;color:#fff" onclick="escolherTime('azul')">🔵 AZUL</button>
+<button id="btn-vermelho" style="background:#dc2626;color:#fff" onclick="escolherTime('vermelho')">🔴 VERMELHO</button>
+</div>
+<button class="btn-laranja" onclick="criarSala()">🏀 CRIAR SALA</button>
+<input id="codigo-digitado" placeholder="Código da sala (ex: AB12)" style="text-transform:uppercase">
+<button class="btn-verde" onclick="entrarSala()">▶️ ENTRAR NA SALA</button>
+<div id="codigo-sala" style="display:none"></div>
+<button class="btn-cinza" onclick="copiarCodigo()" id="btn-copiar" style="display:none">📋 COPIAR CÓDIGO</button>
+</div>
+
+<div id="jogo">
+<div id="topo"><span>🔵 <span id="placar-azul">0</span></span><span>⏱️ <span id="tempo">2:00</span></span><span><span id="placar-vermelho">0</span> 🔴</span></div>
+<div id="quadra">
+<div class="cesta esq"></div><div class="cesta dir"></div>
+<div id="bola">🏀</div>
+<div id="aviso"></div>
+<div id="joystick"><div id="bolinha"></div></div>
+<button id="btn-recomecar" onclick="recomecar()">🔄 Recomeçar</button>
+</div>
+</div>
+
+<script>
+const socket = io();
+let meuTime='azul', meuPersonagem='🦊', meuCodigo='', meuX=400, meuY=280;
+const emojis=['🦊','🐻','🐼','🦁','🐯','🐶','🐱','🐰','🦄','🐲','🐵','🐸','🦖','👽','🤖','👾'];
+const lista=document.getElementById('lista-personagens');
+emojis.forEach(e=>{
+  const b=document.createElement('button'); b.textContent=e;
+  if(e===meuPersonagem) b.classList.add('sel');
+  b.onclick=()=>{ meuPersonagem=e; document.querySelectorAll('.personagens button').forEach(x=>x.classList.remove('sel')); b.classList.add('sel'); };
+  lista.appendChild(b);
+});
+function escolherTime(t){ meuTime=t; document.getElementById('btn-azul').classList.toggle('sel',t==='azul'); document.getElementById('btn-vermelho').classList.toggle('sel',t==='vermelho'); }
+function mostrarAviso(txt){ const a=document.getElementById('aviso'); a.textContent=txt; a.style.display='block'; setTimeout(()=>a.style.display='none',2500); }
+function criarSala(){ const nome=document.getElementById('nome').value.trim()||'Jogador'; socket.emit('criar_sala',{nome}); }
+function entrarSala(){
+  const nome=document.getElementById('nome').value.trim()||'Jogador';
+  const codigo=(document.getElementById('codigo-digitado').value.trim()||meuCodigo).toUpperCase();
+  if(!codigo) return alert('Digite o código da sala!');
+  meuCodigo=codigo;
+  socket.emit('entrar_sala',{nome,codigo,personagem:meuPersonagem,time:meuTime});
+  document.getElementById('tela-inicial').style.display='none';
+  document.getElementById('jogo').style.display='flex';
+  meuX = meuTime==='vermelho'?700:100; meuY=280;
+}
+function copiarCodigo(){ navigator.clipboard.writeText(meuCodigo); alert('Código copiado: '+meuCodigo); }
+function recomecar(){ socket.emit('iniciar_jogo',{codigo:meuCodigo}); mostrarAviso('NOVO JOGO! 🏀'); }
+socket.on('sala_criada',({codigo})=>{
+  meuCodigo=codigo; document.getElementById('codigo-digitado').value=codigo;
+  const d=document.getElementById('codigo-sala'); d.style.display='block'; d.textContent='SALA: '+codigo;
+  document.getElementById('btn-copiar').style.display='block';
+  mostrarAviso('Sala criada! Chama os amigos!'); setTimeout(entrarSala,600);
+});
+socket.on('erro',m=>alert(m));
+socket.on('gol',m=>mostrarAviso(m));
+socket.on('fim',(p)=>{ mostrarAviso(p.azul>p.vermelho?'🔵 AZUL VENCEU!':p.vermelho>p.azul?'🔴 VERMELHO VENCEU!':'🤝 EMPATE!'); });
+socket.on('atualizar',(d)=>{
+  document.getElementById('placar-azul').textContent=d.placar.azul;
+  document.getElementById('placar-vermelho').textContent=d.placar.vermelho;
+  const mm=Math.floor(d.tempo/60), ss=String(d.tempo%60).padStart(2,'0');
+  document.getElementById('tempo').textContent=mm+':'+ss;
+  const q=document.getElementById('quadra');
+  q.querySelectorAll('.jogador').forEach(e=>e.remove());
+  d.jogadores.forEach(j=>{
+    const div=document.createElement('div'); div.className='jogador'+(j.andando?' andando':'');
+    div.style.left=(j.x/800*100)+'%'; div.style.top=(j.y/560*100)+'%';
+    div.innerHTML=`<span class="emoji">${j.personagem}</span><span class="nome">${j.nome}</span>`;
+    q.appendChild(div);
+  });
+  const bola=document.getElementById('bola');
+  bola.style.left=(d.bola.x/800*100)+'%'; bola.style.top=(d.bola.y/560*100)+'%';
+});
+const teclas={};
+window.addEventListener('keydown',e=>teclas[e.key.toLowerCase()]=true);
+window.addEventListener('keyup',e=>teclas[e.key.toLowerCase()]=false);
+setInterval(()=>{
+  if(!meuCodigo) return;
+  let dx=0, dy=0;
+  if(teclas['a']||teclas['arrowleft']) dx=-6;
+  if(teclas['d']||teclas['arrowright']) dx=6;
+  if(teclas['w']||teclas['arrowup']) dy=-6;
+  if(teclas['s']||teclas['arrowdown']) dy=6;
+  if(dx||dy){ meuX=Math.max(30,Math.min(770,meuX+dx)); meuY=Math.max(40,Math.min(520,meuY+dy)); socket.emit('mover',{codigo:meuCodigo,x:meuX,y:meuY}); }
+},1000/60);
+let joyAtivo=false;
+const joy=document.getElementById('joystick'), bol=document.getElementById('bolinha'), quadra=document.getElementById('quadra');
+function joyMove(e){
+  const t=e.touches?e.touches[0]:e; const r=joy.getBoundingClientRect();
+  let dx=t.clientX-(r.left+r.width/2), dy=t.clientY-(r.top+r.height/2);
+  const d=Math.sqrt(dx*dx+dy*dy), max=35;
+  if(d>max){ dx=dx/d*max; dy=dy/d*max; }
+  bol.style.transform=`translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+  if(meuCodigo){ meuX=Math.max(30,Math.min(770,meuX+dx/6)); meuY=Math.max(40,Math.min(520,meuY+dy/6)); socket.emit('mover',{codigo:meuCodigo,x:meuX,y:meuY}); }
+}
+joy.addEventListener('touchstart',e=>{e.preventDefault(); joyAtivo=true;});
+joy.addEventListener('touchmove',e=>{e.preventDefault(); joyMove(e);});
+joy.addEventListener('touchend',()=>{ bol.style.transform='translate(-50%,-50%)'; });
+joy.addEventListener('mousedown',()=>joyAtivo=true);
+window.addEventListener('mousemove',e=>{ if(joyAtivo) joyMove(e); });
+window.addEventListener('mouseup',()=>{ joyAtivo=false; bol.style.transform='translate(-50%,-50%)'; });
+quadra.addEventListener('touchmove',e=>{ if(e.target===quadra) e.preventDefault(); },{passive:false});
+</script>
+</body>
+</html>
